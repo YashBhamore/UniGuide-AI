@@ -1,0 +1,13 @@
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Local datasets, caches, and generated outputs
+data/
+Data/
+
+# Local artifacts
+*.zip
+*.png
