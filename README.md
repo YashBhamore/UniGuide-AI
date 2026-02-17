@@ -1,4 +1,5 @@
 # UniGuide AI
+<img width="851" height="574" alt="image" src="https://github.com/user-attachments/assets/b6f9df45-a2e0-4eea-bca1-0ce2aef55dd5" />
 
 UniGuide AI is a student decision-support pipeline for UNT. It turns public university webpages into structured guidance items, generates synthetic student profiles, ranks top recommendations per student goal, and evaluates recommendation quality.
 
