@@ -1,0 +1,81 @@
+{
+  "selected_features": [
+    "student_level",
+    "program_category",
+    "semester_stage",
+    "semester",
+    "program_total_credits",
+    "credits",
+    "age",
+    "nationality",
+    "schol_alumni",
+    "schol_athlete",
+    "schol_in_state",
+    "schol_merit",
+    "aid_in_state_grant",
+    "int_entrepreneurship",
+    "int_healthcare_analytics"
+  ],
+  "cat_cols": [
+    "student_level",
+    "international_status",
+    "program_category",
+    "semester_stage",
+    "part_time_enrollment",
+    "nationality"
+  ],
+  "le_dict": {
+    "student_level": {
+      "classes": [
+        "Graduate",
+        "Undergraduate"
+      ]
+    },
+    "international_status": {
+      "classes": [
+        "Domestic",
+        "International"
+      ]
+    },
+    "program_category": {
+      "classes": [
+        "Arts",
+        "Business",
+        "Computer Science",
+        "Data Science",
+        "Engineering",
+        "General"
+      ]
+    },
+    "semester_stage": {
+      "classes": [
+        "Fall",
+        "Spring"
+      ]
+    },
+    "part_time_enrollment": {
+      "classes": [
+        "No",
+        "Yes",
+        null
+      ]
+    },
+    "nationality": {
+      "classes": [
+        "American",
+        "Bangladeshi",
+        "Brazilian",
+        "Canadian",
+        "Chinese",
+        "French",
+        "German",
+        "Indian",
+        "Mexican",
+        "Nepalese",
+        "Nigerian",
+        "South Korean",
+        "Vietnamese"
+      ]
+    }
+  }
+}

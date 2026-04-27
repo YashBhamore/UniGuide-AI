@@ -1,9 +1,11 @@
 import os
+from pathlib import Path
 
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-RAW_PATH = "data/raw/uikd_raw.csv"
+RAW_REQUIRED_PATHS = ("data/raw/uikd_raw.csv",)
+RAW_OPTIONAL_PATHS = ("data/raw/facultyinfo_raw.csv",)
 CLEAN_PATH = "data/clean/uikd_clean.csv"
 TEXT_COL_CANDIDATES = ("text_clean", "text_raw", "text")
 
@@ -52,8 +54,29 @@ def extract_keywords(texts, top_n=8):
     return tags
 
 
+def load_raw_sources() -> pd.DataFrame:
+    frames = []
+
+    for raw_path in RAW_REQUIRED_PATHS:
+        path = Path(raw_path)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Missing required raw dataset: {raw_path}. "
+                "Run the scraper before cleaning."
+            )
+        frames.append(pd.read_csv(path))
+
+    for raw_path in RAW_OPTIONAL_PATHS:
+        path = Path(raw_path)
+        if path.exists():
+            frames.append(pd.read_csv(path))
+
+    combined = pd.concat(frames, ignore_index=True, sort=False)
+    return combined
+
+
 def main():
-    df = pd.read_csv(RAW_PATH)
+    df = load_raw_sources()
     os.makedirs("data/clean", exist_ok=True)
 
     text_col = pick_text_column(df.columns)
@@ -70,6 +93,9 @@ def main():
 
     df.to_csv(CLEAN_PATH, index=False)
     print(f"Saved cleaned dataset with tags: {CLEAN_PATH}")
+    if "category" in df.columns:
+        print("Category counts:")
+        print(df["category"].fillna("").value_counts().to_string())
     print(f"Rows: {len(df)} | Empty text rows: {(df['text_clean'].str.len() == 0).sum()}")
     print(df[["category", "page_title", "tags"]].head().to_string(index=False))
 

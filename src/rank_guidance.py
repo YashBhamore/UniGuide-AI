@@ -27,7 +27,7 @@ CATEGORY_BOOSTS = {
     "Find scholarships": {"financial_aid": 2.0},
     "Meet academic deadlines": {"academic_policies": 2.0},
     "Maintain visa compliance": {"international": 2.0},
-    "Explore research opportunities": {"research": 2.0},
+    "Explore research opportunities": {"research": 2.0, "faculty_info": 1.5},
     "Access student support resources": {"advising": 2.0, "navigate_faq": 2.0},
 }
 

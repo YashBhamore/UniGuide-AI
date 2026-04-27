@@ -5,6 +5,8 @@ import pandas as pd
 
 IN_PATH = "data/clean/uikd_enriched.csv"
 OUT_PATH = "data/clean/uikd_items.csv"
+MIN_CHUNK_WORDS = 30
+MAX_CHUNK_WORDS = 120
 
 def make_id(s: str) -> str:
     return hashlib.md5(s.encode("utf-8")).hexdigest()
@@ -24,8 +26,32 @@ def sentence_split(text: str) -> list[str]:
         parts = [p.strip() for p in parts if p and p.strip()]
     return parts
 
+def count_words(text: str) -> int:
+    return len(text.split())
 
-def split_into_chunks(text: str, min_words: int = 35, max_words: int = 120) -> list[str]:
+def enforce_min_chunk_words(chunks: list[str], min_words: int) -> list[str]:
+    chunks = [c.strip() for c in chunks if c and c.strip()]
+    if len(chunks) <= 1:
+        return [c for c in chunks if count_words(c) >= min_words]
+
+    # Repeatedly merge small chunks into neighbors until all chunks meet threshold
+    # or only one chunk remains (for short documents).
+    while len(chunks) > 1:
+        small_idx = next((i for i, c in enumerate(chunks) if count_words(c) < min_words), None)
+        if small_idx is None:
+            break
+        if small_idx == 0:
+            chunks[1] = f"{chunks[0]} {chunks[1]}".strip()
+            del chunks[0]
+        else:
+            chunks[small_idx - 1] = f"{chunks[small_idx - 1]} {chunks[small_idx]}".strip()
+            del chunks[small_idx]
+    return [c for c in chunks if count_words(c) >= min_words]
+
+
+def split_into_chunks(
+    text: str, min_words: int = MIN_CHUNK_WORDS, max_words: int = MAX_CHUNK_WORDS
+) -> list[str]:
     if max_words <= min_words:
         raise ValueError("max_words must be greater than min_words")
 
@@ -72,16 +98,7 @@ def split_into_chunks(text: str, min_words: int = 35, max_words: int = 120) -> l
     if not chunks:
         return []
 
-    # Second pass: merge tiny trailing chunks so results stay meaningful.
-    merged = []
-    for chunk in chunks:
-        words = chunk.split()
-        if merged and len(words) < min_words:
-            merged[-1] = f"{merged[-1]} {chunk}".strip()
-        else:
-            merged.append(chunk)
-
-    return merged
+    return enforce_min_chunk_words(chunks, min_words)
 
 def guess_item_title(chunk: str) -> str:
     words = chunk.split()

@@ -1,8 +1,13 @@
 import re
+from urllib.parse import urlparse
 import pandas as pd
 
 IN_TXT = "URLS.txt"
 OUT_CSV = "seed_urls_filtered.csv"
+EXTRA_ALLOWED_HOSTS = {
+    "unt-scholarships.awardspring.com",
+    "untscholarships.awardspring.com",
+}
 
 # Remove obvious noise paths for student decision-support scope
 EXCLUDE_PATTERNS = [
@@ -28,6 +33,13 @@ def normalize(url: str) -> str:
     url = url.split("#")[0]  # remove fragments
     return url
 
+def host_from_url(url: str) -> str:
+    return urlparse(url).netloc.lower().split(":")[0]
+
+def is_allowed_domain(url: str) -> bool:
+    host = host_from_url(url)
+    return host == "unt.edu" or host.endswith(".unt.edu") or host in EXTRA_ALLOWED_HOSTS
+
 def main():
     with open(IN_TXT, "r", encoding="utf-8", errors="ignore") as f:
         urls = [normalize(line) for line in f.readlines() if line.strip().startswith("http")]
@@ -37,6 +49,10 @@ def main():
     kept = []
     for u in urls:
         low = u.lower()
+
+        # Keep UNT domains only (+ explicit allowlist exceptions).
+        if not is_allowed_domain(u):
+            continue
 
         # Exclude if matches any exclude pattern
         if any(re.search(p, low) for p in EXCLUDE_PATTERNS):

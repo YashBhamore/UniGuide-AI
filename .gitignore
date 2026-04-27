@@ -11,3 +11,7 @@ Data/
 # Local artifacts
 *.zip
 *.png
+
+# Frontend artifacts
+frontend/node_modules/
+frontend/dist/
