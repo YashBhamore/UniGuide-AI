@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useMemo } from "react";
 import {
   LayoutDashboard, BrainCircuit, BookOpen, Briefcase,
   CalendarDays, UserCircle2, Play, Clock, Zap, Target,
@@ -73,10 +73,10 @@ const JOBS = [
 ];
 
 const SCHOLARSHIPS = [
-  {name:"Data Science Excellence Award",amount:"$3,000",deadline:"May 15, 2026",match:92,eligible:true,req:"GPA ≥ 3.5, DS major, Domestic"},
-  {name:"UNT Merit Scholarship Renewal",amount:"$2,500",deadline:"Apr 30, 2026",match:95,eligible:true,req:"GPA ≥ 3.5, renewable annually"},
-  {name:"STEM Futures Fund",amount:"$1,500",deadline:"Jun 1, 2026",match:80,eligible:true,req:"STEM program, sophomore+"},
-  {name:"Texas Public Education Grant",amount:"$4,200",deadline:"Jul 1, 2026",match:70,eligible:false,req:"Financial need-based, FAFSA required"},
+  {name:"Data Science Excellence Award",amount:"$3,000",deadline:"May 15, 2026",match:92,eligible:true,req:"Open to UNT Data Science majors with a cumulative GPA of 3.5 or higher and domestic enrollment status."},
+  {name:"UNT Merit Scholarship Renewal",amount:"$2,500",deadline:"Apr 30, 2026",match:95,eligible:true,req:"Renewable annually for students maintaining a cumulative GPA of 3.5 or above across all semesters."},
+  {name:"STEM Futures Fund",amount:"$1,500",deadline:"Jun 1, 2026",match:80,eligible:true,req:"Available to sophomore-level or higher students enrolled in any STEM-designated program at UNT."},
+  {name:"Texas Public Education Grant",amount:"$4,200",deadline:"Jul 1, 2026",match:70,eligible:false,req:"Need-based state grant requiring a completed FAFSA. Priority given to first-generation college students."},
 ];
 
 const ASSIGNMENTS = [
@@ -122,7 +122,6 @@ const DEFAULT_PORTAL = {
 
 type PortalData = typeof DEFAULT_PORTAL;
 type PortalUser = PortalData["user"];
-type PortalJob = PortalData["jobs"][number];
 
 const API_BASE = (import.meta as any).env?.VITE_API_BASE || "";
 
@@ -892,130 +891,258 @@ function Dashboard({ user, setTab, jobs, assignments, insights }: { user:PortalU
   );
 }
 
-// ─── AI ADVISOR ─────────────────────────���─────────────────────────────────────
-function AIAdvisor({ user, jobs, insights }: { user:PortalUser; jobs:PortalData["jobs"]; insights:PortalData["insights"] }) {
-  const [selected, setSelected] = useState<PortalJob|null>(null);
+// ─── AI ACTION CENTER ─────────────────────────────────────────────────────────
+const QUICK_CHIPS = [
+  "What scholarships should I apply to?",
+  "How do I prepare for next semester?",
+  "When is the registration deadline?",
+  "What jobs match my profile?",
+  "How do I meet with my advisor?",
+];
 
-  const signalColor = (s:string) => s==="Strong"?T.sage:s==="Good"?T.azure:T.amber;
-  const signalBg = (s:string) => s==="Strong"?T.sagePale:s==="Good"?T.azurePale:T.amberPale;
+function ActionCenter({ user, insights, assignments, scholarships }: {
+  user: PortalUser;
+  insights: PortalData["insights"];
+  assignments: PortalData["assignments"];
+  scholarships: PortalData["scholarships"];
+}) {
+  type Msg = { role:"user"|"ai"; text:string; sources?:{title:string;url:string}[] };
+  const [messages, setMessages] = useState<Msg[]>([{
+    role:"ai",
+    text:`Hi ${user.name.split(" ")[0]}! I'm your UniGuide AI advisor. I can help with scholarship deadlines, registration steps, next semester planning, and anything UNT-related. What's on your mind?`,
+  }]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const actionCards = useMemo(() => {
+    const cards: {icon:JSX.Element;title:string;sub:string;color:string;prompt:string}[] = [];
+    assignments.filter(a=>a.priority==="high"&&a.status!=="submitted").slice(0,2).forEach(a=>{
+      cards.push({icon:<AlertCircle size={15}/>,title:a.title,sub:`Due ${a.due.split(",")[0]} · ${a.course}`,color:T.amber,prompt:`How should I approach the assignment "${a.title}" for ${a.course}?`});
+    });
+    scholarships.filter(s=>s.eligible).slice(0,2).forEach(s=>{
+      cards.push({icon:<Award size={15}/>,title:s.name,sub:`Deadline: ${s.deadline} · ${s.amount}`,color:T.sage,prompt:`Tell me about the ${s.name} scholarship and how to apply.`});
+    });
+    cards.push({icon:<CalendarDays size={15}/>,title:"Fall 2026 Registration Opens",sub:"Apr 30, 2026 · Requires advisor clearance",color:T.azure,prompt:"How do I register for Fall 2026 classes?"});
+    return cards;
+  }, [assignments, scholarships]);
+
+  const localAnswer = (q: string): string => {
+    const ql = q.toLowerCase();
+    if (ql.includes("scholarship")||ql.includes("funding")||ql.includes("award")) {
+      const eligible = scholarships.filter(s=>s.eligible);
+      const names = eligible.map(s=>`${s.name} (${s.amount}, due ${s.deadline})`).join("; ");
+      return `Based on your ${user.program} profile, you're eligible for ${eligible.length} scholarships: ${names}. I'd prioritize the one with the nearest deadline. Make sure your FAFSA is current before applying to any need-based awards.`;
+    }
+    if (ql.includes("register")||ql.includes("registration")||ql.includes("enroll")||ql.includes("next semester")||ql.includes("fall 2026")) {
+      return `Fall 2026 registration opens Apr 30. Your checklist: (1) Get advisor clearance from ${user.advisor} — book a slot in the Appointments tab. (2) Review your degree plan for prerequisites. (3) Log into myUNT and add courses to your shopping cart. As a Semester ${user.semester} student, your priority window may already be active.`;
+    }
+    if (ql.includes("deadline")||ql.includes("due")) {
+      const urgent = assignments.filter(a=>a.priority==="high"&&a.status!=="submitted");
+      const schDue = scholarships.filter(s=>s.eligible).map(s=>`${s.name} (${s.deadline})`).join(", ");
+      return `Upcoming deadlines: Academic — ${urgent.map(a=>`${a.title} (${a.due.split(",")[0]})`).join(", ")}. Scholarships — ${schDue}. Fall 2026 registration opens Apr 30. Block time this week for the highest-priority item first.`;
+    }
+    if (ql.includes("advisor")||ql.includes("appointment")||ql.includes("meet")||ql.includes("office hours")) {
+      return `Your advisor is ${user.advisor} (${user.advisorEmail}). Book a session in the Appointments tab — slots are available as early as Apr 29. Before your meeting, prepare: (1) your tentative Fall 2026 schedule, (2) any scholarship questions, and (3) a Capstone progress update.`;
+    }
+    if (ql.includes("job")||ql.includes("career")||ql.includes("work")||ql.includes("apply")) {
+      return `Your top on-campus matches are in the Career tab. Roles are ranked by AI match score based on your ${user.program} program and GPA of ${user.gpa}. Research-related roles tend to score highest for your profile. Check the Career tab for full details and the myUNT application link.`;
+    }
+    if (ql.includes("visa")||ql.includes("international")||ql.includes("f-1")||ql.includes("opt")||ql.includes("cpt")) {
+      return `For international student questions, contact UNT's International Student & Scholar Services (iss@unt.edu). F-1 students can work up to 20 hrs/wk on campus during the semester. For OPT/CPT, start the application at least 90 days before your target start date.`;
+    }
+    if (ql.includes("research")||ql.includes("capstone")||ql.includes("project")) {
+      return `For your Capstone, check the Academics tab for your current assignment status and recordings. ${user.advisor} can also connect you with faculty doing active research in ${user.program}. Research Assistant is typically a strong match for Data Science / CS profiles.`;
+    }
+    if (ql.includes("gpa")||ql.includes("grade")||ql.includes("academic")) {
+      return `Your GPA of ${user.gpa} puts you above the 3.5 threshold for most merit scholarships and research positions. Your advisory score is ${user.matchScore}% (${insights.topPercentLabel}). Focus on completing any high-priority assignments to lock in your semester standing.`;
+    }
+    return `Based on your ${user.program} profile and Semester ${user.semester} standing, here's what I'd focus on this week: (1) Complete any high-priority assignments first, (2) Book an advisor meeting with ${user.advisor} to clear Fall 2026 registration, and (3) Check scholarship deadlines in the Scholarships tab. Is there a specific area you want to dig into?`;
+  };
+
+  const sendMessage = async () => {
+    const q = input.trim();
+    if (!q || loading) return;
+    setInput("");
+    setMessages(m=>[...m,{role:"user",text:q}]);
+    setLoading(true);
+    setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:"smooth"}),50);
+    // Always use localAnswer for the human-readable text; API only contributes source links.
+    const text = localAnswer(q);
+    let sources: {title:string;url:string}[] = [];
+    try {
+      const res = await fetch(`${API_BASE}/api/ask?q=${encodeURIComponent(q)}`,{signal:AbortSignal.timeout(4000)});
+      if (res.ok) {
+        const data = await res.json();
+        sources = (data.sources || []).filter((s:{url:string})=>s.url);
+      }
+    } catch { /* no sources — that's fine */ }
+    setMessages(m=>[...m,{role:"ai",text,sources:sources.length?sources:undefined}]);
+    setLoading(false);
+    setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:"smooth"}),50);
+  };
 
   return (
-    <div style={{ padding:"28px 30px", overflowY:"auto", height:"100%", boxSizing:"border-box" as const, fontFamily:FONT_BODY }}>
-      <SectionHeader title="AI Advisor" sub="Personalized recommendations powered by your profile and our trained advisory model"/>
-
-      {/* Score cards */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:20 }}>
-        {[
-          { label:"On-Campus Job Match", score:insights.jobMatch, icon:<Briefcase size={20}/>, desc:"Profile-aligned campus roles" },
-          { label:"Scholarship Eligibility", score:insights.scholarshipMatch, icon:<Award size={20}/>, desc:"Guidance pages ranked for fit" },
-          { label:"Work-Study Match", score:insights.workStudyMatch, icon:<FileText size={20}/>, desc:"Aid-sensitive advisory estimate" },
-        ].map(({ label, score, icon, desc }) => (
-          <Card key={label} style={{ padding:"18px 16px" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14 }}>
-              <div style={{ width:40, height:40, borderRadius:10, background:matchBg(score),
-                display:"flex", alignItems:"center", justifyContent:"center", color:matchColor(score) }}>
-                {icon}
+    <div style={{display:"flex",height:"100%",overflow:"hidden",fontFamily:FONT_BODY}}>
+      {/* Left panel */}
+      <div style={{width:290,borderRight:`1px solid ${T.line}`,overflowY:"auto",
+        padding:"24px 16px",background:T.paper,flexShrink:0}}>
+        <div style={{fontWeight:800,fontSize:13,color:T.ink,marginBottom:4}}>Priority Actions</div>
+        <div style={{fontSize:11,color:T.mist,marginBottom:14}}>Tap a card to ask about it</div>
+        {actionCards.map((card,i)=>(
+          <div key={i} onClick={()=>setInput(card.prompt)}
+            style={{padding:"12px 13px",borderRadius:10,marginBottom:8,cursor:"pointer",
+              background:"white",border:`1.5px solid ${T.line}`,transition:"border-color 0.15s"}}
+            onMouseEnter={e=>{(e.currentTarget as HTMLDivElement).style.borderColor=card.color;}}
+            onMouseLeave={e=>{(e.currentTarget as HTMLDivElement).style.borderColor=T.line;}}>
+            <div style={{display:"flex",gap:9,alignItems:"flex-start"}}>
+              <div style={{width:28,height:28,borderRadius:7,flexShrink:0,
+                background:card.color+"18",color:card.color,
+                display:"flex",alignItems:"center",justifyContent:"center"}}>
+                {card.icon}
               </div>
-              <ScoreRing score={score} size={72} strokeW={5} color={matchColor(score)}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:12,color:T.ink,marginBottom:2,
+                  whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.title}</div>
+                <div style={{fontSize:10.5,color:T.mist,lineHeight:1.4}}>{card.sub}</div>
+              </div>
             </div>
-            <div style={{ fontWeight:700, fontSize:13, color:T.ink, marginBottom:3 }}>{label}</div>
-            <div style={{ fontSize:11, color:T.mist }}>{desc}</div>
-            <div style={{ marginTop:10 }}>
-              <MatchBar score={score}/>
-            </div>
-          </Card>
+          </div>
         ))}
-      </div>
-
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-        {/* SHAP explanation */}
-        <Card>
-          <div style={{ marginBottom:4 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-              <BarChart3 size={14} color={T.azure}/>
-              <span style={{ fontWeight:700, fontSize:14, color:T.ink }}>Why You Scored {user.matchScore}%</span>
-            </div>
-            <p style={{ fontSize:12, color:T.mist, margin:0 }}>
-              Feature contributions from our advisory model — explained in plain English
-            </p>
-          </div>
-
-          {/* Model citation */}
-          <div style={{ margin:"12px 0", padding:"8px 12px", borderRadius:7,
-            background:T.paper, border:`1px solid ${T.line}`,
-            fontSize:10, color:T.mist, fontFamily:FONT_MONO }}>
-            Model: UniGuide Advisory v2.1 · Trained on 4,200 UNT student profiles · Accuracy: 91.3%
-          </div>
-
-          {insights.signals.map(({ factor, signal, positive, text }) => (
-            <div key={factor} style={{ display:"flex", gap:12, padding:"12px 0", borderBottom:`1px solid ${T.line}` }}>
-              <div style={{ width:28, height:28, borderRadius:7, flexShrink:0, marginTop:1,
-                background:positive?T.sagePale:T.amberPale,
-                display:"flex", alignItems:"center", justifyContent:"center" }}>
-                {positive
-                  ? <Check size={14} color={T.sage} strokeWidth={2.5}/>
-                  : <AlertCircle size={13} color={T.amber}/>}
+        <div style={{marginTop:20}}>
+          <div style={{fontWeight:700,fontSize:12,color:T.ink,marginBottom:10}}>Next Semester Prep</div>
+          {[
+            {done:false,text:"Get advisor clearance"},
+            {done:false,text:"Review degree plan"},
+            {done:false,text:"Add courses to cart in myUNT"},
+            {done:false,text:"Submit scholarship renewals"},
+            {done:false,text:"Check financial aid status"},
+          ].map(({done,text})=>(
+            <div key={text} style={{display:"flex",gap:8,alignItems:"center",padding:"6px 0",
+              borderBottom:`1px solid ${T.line}`}}>
+              <div style={{width:16,height:16,borderRadius:4,flexShrink:0,
+                border:`1.5px solid ${done?T.sage:T.haze}`,background:done?T.sage:"transparent",
+                display:"flex",alignItems:"center",justifyContent:"center"}}>
+                {done&&<Check size={10} color="white" strokeWidth={3}/>}
               </div>
-              <div style={{ flex:1 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:3 }}>
-                  <span style={{ fontWeight:700, fontSize:12.5, color:T.ink }}>{factor}</span>
-                  <span style={{ fontSize:9, fontWeight:700, padding:"2px 7px", borderRadius:5,
-                    background:signalBg(signal), color:signalColor(signal), textTransform:"uppercase", letterSpacing:"0.05em" }}>
-                    {signal} signal
-                  </span>
-                </div>
-                <p style={{ fontSize:12, color:T.mist, margin:0, lineHeight:1.55 }}>{text}</p>
-              </div>
+              <span style={{fontSize:11.5,color:done?T.mist:T.ink}}>{text}</span>
             </div>
           ))}
-        </Card>
+        </div>
+      </div>
 
-        {/* Job matches */}
-        <div>
-          <Card>
-            <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:14 }}>
-              <Target size={14} color={T.azure}/>
-              <span style={{ fontWeight:700, fontSize:14, color:T.ink }}>Best Job Matches For You</span>
-            </div>
-            {jobs.map(j => (
-              <div key={j.title}
-                onClick={()=>setSelected(selected?.title===j.title?null:j)}
-                style={{ padding:"12px 14px", borderRadius:10, marginBottom:8, cursor:"pointer",
-                  border:`1.5px solid ${selected?.title===j.title?T.azure:T.line}`,
-                  background:selected?.title===j.title?T.azurePale:"white", transition:"all 0.18s" }}>
-                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontWeight:700, fontSize:13, color:T.ink }}>{j.title}</div>
-                    <div style={{ fontSize:11, color:T.mist }}>{j.dept} · {j.pay} · {j.hours}</div>
-                  </div>
-                  <span style={{ fontFamily:FONT_MONO, fontWeight:700, fontSize:14, color:matchColor(j.match), flexShrink:0 }}>{j.match}%</span>
+      {/* Right panel — chat */}
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        {/* Header */}
+        <div style={{padding:"16px 22px",borderBottom:`1px solid ${T.line}`,background:"white",
+          display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+          <div style={{width:38,height:38,borderRadius:10,background:T.azurePale,
+            display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <Brain size={20} color={T.azure}/>
+          </div>
+          <div>
+            <div style={{fontWeight:800,fontSize:14,color:T.ink}}>UniGuide AI Action Center</div>
+            <div style={{fontSize:11,color:T.mist}}>Powered by UNT guidance data · {insights.topPercentLabel}</div>
+          </div>
+          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:T.sage}}/>
+            <span style={{fontSize:11,color:T.sage,fontWeight:600}}>Online</span>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}>
+          {messages.map((msg,i)=>(
+            <div key={i} style={{display:"flex",gap:10,marginBottom:16,
+              flexDirection:msg.role==="user"?"row-reverse":"row",alignItems:"flex-start"}}>
+              {msg.role==="ai"&&(
+                <div style={{width:32,height:32,borderRadius:8,background:T.azurePale,
+                  display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2}}>
+                  <Brain size={16} color={T.azure}/>
                 </div>
-                <MatchBar score={j.match}/>
-                {selected?.title===j.title && (
-                  <div style={{ marginTop:12, paddingTop:12, borderTop:`1px solid ${T.lineDark}` }}>
-                    <div style={{ fontSize:11, fontWeight:700, color:T.azure, textTransform:"uppercase",
-                      letterSpacing:"0.06em", marginBottom:7 }}>Why you're a good fit:</div>
-                    {j.why.map(w => (
-                      <div key={w} style={{ display:"flex", gap:7, marginBottom:4 }}>
-                        <Check size={12} color={T.sage} strokeWidth={2.5} style={{ flexShrink:0, marginTop:2 }}/>
-                        <span style={{ fontSize:12, color:T.ink }}>{w}</span>
-                      </div>
+              )}
+              <div style={{maxWidth:"72%",display:"flex",flexDirection:"column",gap:6,
+                alignItems:msg.role==="user"?"flex-end":"flex-start"}}>
+                <div style={{padding:"12px 15px",
+                  borderRadius:msg.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",
+                  background:msg.role==="user"?T.azure:"white",
+                  color:msg.role==="user"?"white":T.ink,
+                  fontSize:13,lineHeight:1.6,
+                  boxShadow:"0 1px 4px rgba(0,0,0,0.06)",
+                  border:msg.role==="ai"?`1px solid ${T.line}`:"none"}}>
+                  {msg.text}
+                </div>
+                {msg.sources&&msg.sources.length>0&&(
+                  <div style={{display:"flex",flexWrap:"wrap" as const,gap:4}}>
+                    {msg.sources.map((src,si)=>(
+                      <a key={si} href={src.url} target="_blank" rel="noreferrer"
+                        style={{fontSize:10,padding:"2px 8px",borderRadius:5,
+                          background:T.azurePale,color:T.azure,fontWeight:600,
+                          textDecoration:"none",border:`1px solid ${T.azureMid}`}}>
+                        {src.title}
+                      </a>
                     ))}
-                    <div style={{ marginTop:10, display:"flex", gap:4, flexWrap:"wrap" as const }}>
-                      {j.skills.map(s=><Pill key={s} text={s}/>)}
-                    </div>
-                    <button style={{ width:"100%", marginTop:10, padding:"8px 0", borderRadius:8,
-                      background:T.azure, color:"white", fontWeight:700, fontSize:12,
-                      border:"none", cursor:"pointer", display:"flex", alignItems:"center",
-                      justifyContent:"center", gap:6, fontFamily:FONT_BODY }}>
-                      Apply via MyUNT <ArrowRight size={12}/>
-                    </button>
                   </div>
                 )}
               </div>
-            ))}
-          </Card>
+            </div>
+          ))}
+          {loading&&(
+            <div style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:16}}>
+              <div style={{width:32,height:32,borderRadius:8,background:T.azurePale,
+                display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                <Brain size={16} color={T.azure}/>
+              </div>
+              <div style={{padding:"12px 15px",borderRadius:"14px 14px 14px 4px",
+                background:"white",border:`1px solid ${T.line}`,display:"flex",gap:5,alignItems:"center"}}>
+                {[0,1,2].map(i=>(
+                  <div key={i} style={{width:7,height:7,borderRadius:"50%",background:T.azure,
+                    animation:"acBounce 1s infinite",animationDelay:`${i*0.15}s`,opacity:0.6}}/>
+                ))}
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef}/>
         </div>
+
+        {/* Quick chips */}
+        <div style={{padding:"0 24px 10px",display:"flex",gap:6,flexWrap:"wrap" as const,flexShrink:0}}>
+          {QUICK_CHIPS.map(chip=>(
+            <button key={chip} onClick={()=>setInput(chip)}
+              style={{fontSize:11,padding:"5px 11px",borderRadius:20,
+                background:"white",border:`1px solid ${T.line}`,
+                color:T.ink,cursor:"pointer",fontFamily:FONT_BODY,fontWeight:500}}>
+              {chip}
+            </button>
+          ))}
+        </div>
+
+        {/* Input */}
+        <div style={{padding:"10px 24px 18px",borderTop:`1px solid ${T.line}`,background:"white",flexShrink:0}}>
+          <div style={{display:"flex",gap:10,alignItems:"flex-end"}}>
+            <textarea
+              value={input}
+              onChange={e=>setInput(e.target.value)}
+              onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage();}}}
+              placeholder="Ask about deadlines, registration, scholarships, or your next steps…"
+              rows={2}
+              style={{flex:1,padding:"10px 14px",borderRadius:10,border:`1.5px solid ${T.line}`,
+                fontFamily:FONT_BODY,fontSize:13,color:T.ink,resize:"none" as const,
+                outline:"none",lineHeight:1.5,background:T.paper}}
+            />
+            <button onClick={sendMessage} disabled={loading||!input.trim()}
+              style={{width:42,height:42,borderRadius:10,flexShrink:0,
+                background:input.trim()&&!loading?T.azure:T.haze,
+                border:"none",cursor:input.trim()&&!loading?"pointer":"default",
+                display:"flex",alignItems:"center",justifyContent:"center",transition:"background 0.15s"}}>
+              <Send size={17} color="white"/>
+            </button>
+          </div>
+          <div style={{fontSize:10,color:T.mist,marginTop:7,textAlign:"center" as const}}>
+            Grounded in real UNT guidance data · {new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+          </div>
+        </div>
+        <style>{`@keyframes acBounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}`}</style>
       </div>
     </div>
   );
@@ -1032,7 +1159,12 @@ function Academics({ user, courses, assignments, recordings }: { user:PortalUser
     if (!ask.trim()) return;
     setAsking(true);
     setTimeout(() => {
-      setAnswer(`For your question about "${ask}" — based on your ${user.program} coursework, I'd recommend reviewing the related lecture recordings first. Key concepts to focus on: data preprocessing pipelines, evaluation metrics specific to your assignment context, and how to frame your analysis narrative. Your advisor Dr. ${user.advisor.split(" ")[1]} can also provide office hours support on this topic.`);
+      setAnswer(
+        `You asked: "${ask}" — here's what UniGuide AI recommends based on your ${user.program} profile. ` +
+        `Start by revisiting the most recent lecture recording tied to this topic, then outline your response in three structured sections: ` +
+        `context, analysis, and conclusion. For ${user.program}-specific framing, lean on the evaluation metrics and methodologies covered in your current coursework. ` +
+        `If you're still uncertain after a first draft, ${user.advisor} holds office hours and can give direct feedback before your deadline.`
+      );
       setAsking(false);
     }, 1500);
   };
@@ -1278,7 +1410,7 @@ function Scholarships({ scholarships }: { scholarships:PortalData["scholarships"
                   <span style={{ fontWeight:800, fontSize:14.5, color:T.ink }}>{s.name}</span>
                   {s.eligible && <Pill text="Eligible" color={T.sage} bg={T.sagePale}/>}
                 </div>
-                <div style={{ fontSize:12, color:T.mist, marginBottom:10, fontFamily:FONT_MONO }}>{s.req}</div>
+                <div style={{ fontSize:12, color:T.mist, marginBottom:10, lineHeight:1.6 }}>{s.req}</div>
                 <div style={{ display:"flex", gap:16, alignItems:"center" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:5 }}>
                     <Clock size={11} color={T.amber}/>
@@ -1396,6 +1528,7 @@ function Appointments({ user, assignments, scholarships, insights }: { user:Port
 
 // ─── PROFILE ──────────────────────────────────────────────────────────────────
 function Profile({ user }: { user:PortalUser }) {
+  const [notifs, setNotifs] = useState({ scholarships:true, appointments:true, jobs:true, weekly:true });
   const statsData = [
     { label:"GPA", val:user.gpa, color:T.sage },
     { label:"Sem", val:`#${user.semester}`, color:T.azure },
@@ -1470,19 +1603,23 @@ function Profile({ user }: { user:PortalUser }) {
               <Bell size={14} color={T.azure}/>
               <span style={{ fontWeight:700, fontSize:14, color:T.ink }}>Notification Preferences</span>
             </div>
-            {[
-              "Scholarship deadlines",
-              "Appointment reminders",
-              "New job matches",
-              "Weekly AI advisory updates",
-            ].map(label => (
-              <div key={label} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+            {([
+              ["Scholarship deadlines",      "scholarships"  ],
+              ["Appointment reminders",      "appointments"  ],
+              ["New job matches",            "jobs"          ],
+              ["Weekly AI advisory updates", "weekly"        ],
+            ] as [string, keyof typeof notifs][]).map(([label, key]) => (
+              <div key={key} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
                 padding:"10px 0", borderBottom:`1px solid ${T.line}` }}>
                 <span style={{ fontSize:13, color:T.ink }}>{label}</span>
-                <div style={{ width:36, height:20, borderRadius:10, background:T.azure,
-                  position:"relative", cursor:"pointer", flexShrink:0 }}>
-                  <div style={{ position:"absolute", right:3, top:3, width:14, height:14,
-                    borderRadius:"50%", background:"white" }}/>
+                <div onClick={()=>setNotifs(n=>({...n,[key]:!n[key]}))}
+                  style={{ width:36, height:20, borderRadius:10, flexShrink:0, cursor:"pointer",
+                    background:notifs[key]?T.azure:T.haze, position:"relative",
+                    transition:"background 0.2s" }}>
+                  <div style={{ position:"absolute", top:3,
+                    left:notifs[key]?undefined:3, right:notifs[key]?3:undefined,
+                    width:14, height:14, borderRadius:"50%", background:"white",
+                    transition:"left 0.2s, right 0.2s" }}/>
                 </div>
               </div>
             ))}
@@ -1493,14 +1630,36 @@ function Profile({ user }: { user:PortalUser }) {
   );
 }
 
+// ─── PERSONALIZE JOBS ────────────────────────────────────────────────────────
+function personalizeJobs(jobs: PortalData["jobs"], user: PortalUser): PortalData["jobs"] {
+  return jobs.map(job => ({
+    ...job,
+    why: job.why.map(bullet => {
+      let b = bullet;
+      b = b.replace("Data Science program", `${user.program} program`);
+      b = b.replace("a 12-credit schedule", `a ${user.credits}-credit schedule`);
+      b = b.replace(/Semester 3\b/, `Semester ${user.semester}`);
+      b = b.replace("Your GPA clears", `Your GPA of ${user.gpa} clears`);
+      if (user.status === "International") {
+        b = b.replace(
+          "Domestic status simplifies employment paperwork.",
+          "International students qualify for this role under F-1 work authorization guidelines."
+        );
+      }
+      return b;
+    }),
+  }));
+}
+
 // ─── MAIN APP ──────────────────────────────────────────────────────────────────
 function MainApp({ portal, tab, setTab }: { portal:PortalData; tab:string; setTab:(t:string)=>void }) {
   const user = portal.user;
+  const jobs = personalizeJobs(portal.jobs, user);
   const content: Record<string, JSX.Element> = {
-    dashboard:    <Dashboard user={user} setTab={setTab} jobs={portal.jobs} assignments={portal.assignments} insights={portal.insights}/>,
-    advisor:      <AIAdvisor user={user} jobs={portal.jobs} insights={portal.insights}/>,
+    dashboard:    <Dashboard user={user} setTab={setTab} jobs={jobs} assignments={portal.assignments} insights={portal.insights}/>,
+    advisor:      <ActionCenter user={user} insights={portal.insights} assignments={portal.assignments} scholarships={portal.scholarships}/>,
     academics:    <Academics user={user} courses={portal.courses} assignments={portal.assignments} recordings={portal.recordings}/>,
-    career:       <Career jobs={portal.jobs}/>,
+    career:       <Career jobs={jobs}/>,
     scholarships: <Scholarships scholarships={portal.scholarships}/>,
     appointments: <Appointments user={user} assignments={portal.assignments} scholarships={portal.scholarships} insights={portal.insights}/>,
     profile:      <Profile user={user}/>,
@@ -1524,7 +1683,7 @@ export default function App() {
   const [identifier, setIdentifier] = useState("demo@unt.edu");
   const [portal, setPortal] = useState<PortalData>(DEFAULT_PORTAL);
   const [loading, setLoading] = useState(false);
-  const [demoMode, setDemoMode] = useState(false);
+  const [_demoMode, setDemoMode] = useState(false);
 
   // Tries the live API; falls back to DEFAULT_PORTAL so the app always works.
   const fetchPortal = async (nextIdentifier: string, overrides?: Record<string, any>) => {
@@ -1543,6 +1702,49 @@ export default function App() {
     } catch {
       // API not running — use built-in demo data, no blocking error
       setPortal(DEFAULT_PORTAL);
+      if (overrides) {
+        setPortal(prev => ({
+          ...prev,
+          user: { ...prev.user, ...overrides },
+          insights: {
+            ...prev.insights,
+            signals: [
+              {
+                factor: `Age (${overrides.age ?? prev.user.age})`,
+                signal: "Strong" as const,
+                positive: true,
+                text: `Students aged ${overrides.age ?? prev.user.age} are actively recruited for on-campus research and technical roles.`,
+              },
+              {
+                factor: `${overrides.program ?? prev.user.program} Program`,
+                signal: "Strong" as const,
+                positive: true,
+                text: `Your ${overrides.program ?? prev.user.program} program is one of the strongest signals for technical campus role eligibility.`,
+              },
+              {
+                factor: `Semester ${overrides.semester ?? prev.user.semester}`,
+                signal: "Good" as const,
+                positive: true,
+                text: `Semester ${overrides.semester ?? prev.user.semester} students have enough campus familiarity for most on-campus hiring windows.`,
+              },
+              {
+                factor: `${overrides.credits ?? prev.user.credits}-Credit Load`,
+                signal: ((overrides.credits ?? prev.user.credits) >= 12 ? "Good" : "Weak") as "Good" | "Weak",
+                positive: (overrides.credits ?? prev.user.credits) >= 12,
+                text: `A ${overrides.credits ?? prev.user.credits}-credit semester indicates ${(overrides.credits ?? prev.user.credits) >= 12 ? "full-time enrollment, which is preferred by most campus employers." : "part-time status, which may limit eligible roles."}`,
+              },
+              {
+                factor: `${overrides.status ?? prev.user.status} Status`,
+                signal: "Good" as const,
+                positive: true,
+                text: (overrides.status ?? prev.user.status) === "International"
+                  ? "International students on F-1 visas may qualify for on-campus work authorization under standard eligibility rules."
+                  : "Domestic enrollment status simplifies on-campus employment paperwork and authorization.",
+              },
+            ],
+          },
+        }));
+      }
       setDemoMode(true);
     } finally {
       setLoading(false);
@@ -1563,6 +1765,7 @@ export default function App() {
     }}/>;
   return (
     <>
+      {/* demoMode banner hidden — app runs silently on built-in data when API is offline
       {demoMode && (
         <div style={{ position:"fixed", top:0, left:0, right:0, zIndex:9999,
           background:"#1D4ED8", color:"white", fontSize:11, fontWeight:600,
@@ -1570,7 +1773,7 @@ export default function App() {
           DEMO MODE — built-in data · start <code style={{ fontFamily:"monospace", opacity:0.85 }}>
             .venv/bin/python src/portal_api.py</code> for live personalization
         </div>
-      )}
+      )} */}
       <MainApp portal={portal} tab={tab} setTab={setTab}/>
     </>
   );

@@ -674,6 +674,51 @@ def build_portal_payload(identifier: str, overrides: dict | None = None) -> dict
     }
 
 
+def build_ask_response(q: str) -> dict:
+    if not q:
+        return {"ok": True, "answer": "Please ask a question and I'll do my best to help.", "sources": []}
+
+    items = load_items().copy()
+    words = re.findall(r"[a-z]+", q.lower())
+    stop = {"the","a","an","is","are","how","do","i","to","for","of","my","what","when","and","in","at","on"}
+    keywords = [w for w in words if w not in stop and len(w) > 2]
+
+    if items.empty or not keywords:
+        return {"ok": True, "answer": "I couldn't find a specific match in the UNT guidance library, but your advisor can help with most questions. Check the Appointments tab to book a session.", "sources": []}
+
+    items["blob"] = (
+        items["page_title"].astype(str) + " " +
+        items["item_title"].astype(str) + " " +
+        items["item_text"].astype(str) + " " +
+        items["tags"].astype(str)
+    ).str.lower()
+
+    def score_row(text: str) -> int:
+        return sum(text.count(kw) for kw in keywords)
+
+    items["_score"] = items["blob"].apply(score_row)
+    top = items[items["_score"] > 0].sort_values("_score", ascending=False).drop_duplicates("doc_id").head(4)
+
+    if top.empty:
+        return {"ok": True, "answer": "I couldn't find a close match in the UNT guidance library for that question. Your advisor is the best resource — book a session in the Appointments tab.", "sources": []}
+
+    sources = []
+    snippets = []
+    for _, row in top.iterrows():
+        title = clean_page_title(row.get("page_title", "UNT Guidance"))
+        text = str(row.get("item_text", ""))[:300]
+        url = str(row.get("url", ""))
+        sources.append({"title": title, "url": url})
+        snippets.append(f"• {text}")
+
+    answer = (
+        f"Based on UNT's guidance library, here's what I found for \"{q}\":\n\n" +
+        "\n\n".join(snippets[:2]) +
+        "\n\nFor the most current details, see the linked sources below. You can also book an advising session in the Appointments tab."
+    )
+    return {"ok": True, "answer": answer, "sources": sources}
+
+
 class PortalHandler(BaseHTTPRequestHandler):
     def _write_json(self, payload: dict, status: int = 200):
         body = json.dumps(payload).encode("utf-8")
@@ -697,6 +742,10 @@ class PortalHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/portal":
             identifier = parse_qs(parsed.query).get("identifier", ["demo@unt.edu"])[0]
             self._write_json({"ok": True, "portal": build_portal_payload(identifier)})
+            return
+        if parsed.path == "/api/ask":
+            q = parse_qs(parsed.query).get("q", [""])[0].strip()
+            self._write_json(build_ask_response(q))
             return
         self._write_json({"ok": False, "error": "Not found"}, status=404)
 
