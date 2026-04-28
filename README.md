@@ -21,6 +21,8 @@ The centerpiece of the portal is the **AI Action Center** — a conversational a
 
 **How it works:**
 
+**Demo**: https://drive.google.com/file/d/1wnxISm9Qh92K6K81kcjjfmDSW2NNtWnK/view?usp=sharing 
+
 1. **Priority action cards** are auto-generated from the student's profile: high-priority assignments (with due dates), eligible scholarships (with deadlines), and UNT calendar items like Fall registration. Clicking any card pre-fills the chat.
 2. **Smart local answers** — the chat engine matches the student's question against their real profile data (program, GPA, advisor, scholarships, assignments) and returns a personalized, natural-language response for topics like:
    - Scholarship eligibility and application deadlines
